@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import io from 'socket.io-client';
@@ -6,6 +7,8 @@ import io from 'socket.io-client';
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function GameBoard() {
+  const { roomId: urlRoomId } = useParams();
+  const navigate = useNavigate();
   const [game, setGame] = useState(new Chess());
   const [fen, setFen] = useState(game.fen());
   const [socket, setSocket] = useState(null);
@@ -19,30 +22,98 @@ function GameBoard() {
     const newSocket = io(SOCKET_SERVER_URL);
     setSocket(newSocket);
 
-    newSocket.on('connect', () => console.log('Connected to socket server with ID:', newSocket.id));
+    if (urlRoomId) {
+      setRoom(urlRoomId);
+      // Attempt to join game if socket is already connected, or rely on 'connect' event
+      if (newSocket.connected) {
+        const playerId = localStorage.getItem('playerId');
+        newSocket.emit('joinGame', { roomId: urlRoomId, playerId });
+      }
+    }
+
+    const attemptRejoin = () => {
+      const savedRoomId = localStorage.getItem('roomId');
+      const savedPlayerId = localStorage.getItem('playerId');
+      if (savedRoomId && savedPlayerId) {
+        console.log(`Attempting to rejoin game ${savedRoomId} with player ID ${savedPlayerId}`);
+        newSocket.emit('joinGame', { roomId: savedRoomId, playerId: savedPlayerId });
+      }
+    };
+
+    newSocket.on('connect', () => {
+      console.log('Connected to socket server with ID:', newSocket.id);
+      if (urlRoomId) {
+        const playerId = localStorage.getItem('playerId');
+        newSocket.emit('joinGame', { roomId: urlRoomId, playerId });
+      } else {
+        attemptRejoin();
+      }
+    });
 
     newSocket.on('gameJoined', (data) => {
       console.log('Game joined:', data);
+      localStorage.setItem('roomId', data.roomId);
+      localStorage.setItem('playerId', data.playerId);
       setRoom(data.roomId);
+      navigate(`/room/${data.roomId}`, { replace: true });
       setPlayerColor(data.color);
-      setMyPlayerData({ color: data.color, secretQueenInitialSquare: null, secretQueenCurrentSquare: null, secretQueenTransformed: false });
+      setMyPlayerData({ playerId: data.playerId, color: data.color, secretQueenInitialSquare: null, secretQueenCurrentSquare: null, secretQueenTransformed: false });
       setFen(data.fen);
       setGame(new Chess(data.fen));
       setStatusMessage(`Joined room ${data.roomId} as ${data.color === 'w' ? 'White' : 'Black'}. Waiting for opponent...`);
     });
+    
+
+
+    newSocket.on('gameRejoined', (data) => {
+      console.log('Successfully rejoined game:', data);
+      setRoom(data.roomId);
+      setPlayerColor(data.color);
+      setFen(data.fen);
+      setGame(new Chess(data.fen));
+      const myData = data.players[data.playerId];
+      setMyPlayerData(myData);
+      
+      if (myData.secretQueenInitialSquare) {
+        setGamePhase('playing');
+        setStatusMessage(`Rejoined game. It's ${data.turn === 'w' ? 'White' : 'Black'}'s turn.`);
+      } else {
+        setGamePhase('selection');
+        setStatusMessage(`Rejoined game. You are ${data.color === 'w' ? 'White' : 'Black'}. Select your Secret Queen pawn.`);
+      }
+    });
 
     newSocket.on('gameStart', (data) => {
       console.log('Game starting:', data);
-      const myColor = data.players[newSocket.id]?.color;
-      if (myColor) {
-        setPlayerColor(myColor);
-        setMyPlayerData(data.players[newSocket.id]);
+      let myPlayerId = localStorage.getItem('playerId');
+      let myData = myPlayerId ? data.players[myPlayerId] : null;
+
+      if (!myData) {
+        const playerEntry = Object.entries(data.players).find(
+          ([id, player]) => player.socketId === newSocket.id
+        );
+
+        if (playerEntry) {
+          myPlayerId = playerEntry[0];
+          myData = playerEntry[1];
+          localStorage.setItem('playerId', myPlayerId);
+        }
       }
+
+      if (myData) {
+        setPlayerColor(myData.color);
+        setMyPlayerData(myData);
+      }
+      
       setRoom(data.roomId);
+      // Ensure URL reflects the room if joining through form after initial load on '/' 
+      if (!urlRoomId || urlRoomId !== data.roomId) {
+        navigate(`/room/${data.roomId}`, { replace: true });
+      }
       setFen(data.fen);
       setGame(new Chess(data.fen));
       setGamePhase('selection');
-      const colorName = myColor === 'w' ? 'White' : 'Black';
+      const colorName = myData?.color === 'w' ? 'White' : 'Black';
       setStatusMessage(`Game started. You are ${colorName}. Select your Secret Queen pawn.`);
     });
 
@@ -61,8 +132,9 @@ function GameBoard() {
       setFen(data.fen);
       setGame(new Chess(data.fen));
       setGamePhase('playing');
-      if (data.players && data.players[newSocket.id]) {
-        setMyPlayerData(data.players[newSocket.id]);
+      const myPlayerId = localStorage.getItem('playerId');
+      if (myPlayerId && data.players[myPlayerId]) {
+        setMyPlayerData(data.players[myPlayerId]);
       }
       setStatusMessage(`Both players have selected! It's ${data.turn === 'w' ? 'White' : 'Black'}'s turn.`);
     });
@@ -72,17 +144,10 @@ function GameBoard() {
       setFen(data.fen);
       setGame(new Chess(data.fen));
       
-      setMyPlayerData(prevPlayerData => {
-        if (!prevPlayerData || !data.lastMove) return prevPlayerData;
-        if (data.lastMove.from === prevPlayerData.secretQueenCurrentSquare) {
-          const updatedPlayerData = { ...prevPlayerData, secretQueenCurrentSquare: data.lastMove.to };
-          if (data.lastMove.flags === 't' && data.lastMove.piece === 'p') {
-            updatedPlayerData.secretQueenTransformed = true;
-          }
-          return updatedPlayerData;
-        }
-        return prevPlayerData;
-      });
+      const myPlayerId = localStorage.getItem('playerId');
+      if (myPlayerId && data.players[myPlayerId]) {
+          setMyPlayerData(data.players[myPlayerId]);
+      }
 
       if (data.trueGameStatus?.isCheckmate || data.trueGameStatus?.isDraw) {
         // Game over logic is handled by 'gameOver' event
@@ -103,11 +168,21 @@ function GameBoard() {
 
     newSocket.on('gameOver', (data) => {
       console.log('Game Over:', data);
-      let message = `Game Over: ${data.status}.`;
-      if (data.winner) {
-        message += ` ${data.winner === 'w' ? 'White' : 'Black'} wins!`;
+      let message = 'Game Over.';
+      if (data.status) {
+        if (data.status.isCheckmate) {
+            const winner = data.turn === 'w' ? 'Black' : 'White';
+            message = `Game Over: Checkmate! ${winner} wins.`;
+        } else if (data.status.isDraw) {
+            message = 'Game Over: Draw.';
+        }
+      } else if (data.winner) {
+          message = `Game Over: ${data.reason}`;
       }
       setStatusMessage(message);
+      localStorage.removeItem('roomId');
+      localStorage.removeItem('playerId');
+      navigate('/', { replace: true }); // Navigate to home on game over
     });
 
     newSocket.on('gameError', (data) => {
@@ -115,8 +190,12 @@ function GameBoard() {
       setStatusMessage(`Error: ${data.message}`);
     });
 
-    newSocket.on('opponentDisconnected', () => {
-      setStatusMessage('Opponent disconnected. Game may have ended.');
+    newSocket.on('opponentDisconnected', (data) => {
+      setStatusMessage(data.message);
+    });
+
+    newSocket.on('playerReconnected', (data) => {
+      setStatusMessage(data.message);
     });
 
     return () => newSocket.disconnect();
@@ -159,7 +238,7 @@ function GameBoard() {
   const handleJoinRoom = (event) => {
     event.preventDefault();
     if (room.trim() && socket) {
-      socket.emit('joinGame', room.trim());
+      socket.emit('joinGame', { roomId: room.trim() });
     }
   };
 
