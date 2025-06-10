@@ -119,18 +119,42 @@ Now for the fun part. This phase involves adding the specific logic for your cus
 
 ## Phase 2.4: Testing & Refinement
 - **Checklist**
-    - [ ] Thoroughly test all aspects of the Secret Queen variant:
-        - [ ] Player 1 (White) selection and moves.
-        - [ ] Player 2 (Black) selection and moves.
-        - [ ] Secret Queen pawn moving as a pawn.
-        - [ ] Secret Queen pawn moving as a queen (and transforming).
-        - [ ] Moves by other pieces.
-        - [ ] Check and Checkmate detection (visual vs. true status).
-        - [ ] Draw conditions (visual vs. true status).
-        - [ ] Game start and end sequences.
-        - [ ] Disconnects during selection and play.
-    - [ ] Address any bugs or inconsistencies found.
-    - [ ] Refine UI messages and interactions for clarity and smoothness.
+    - [x] Thoroughly test all aspects of the Secret Queen variant:
+        - [x] Player 1 (White) selection and moves.
+        - [x] Player 2 (Black) selection and moves.
+        - [x] Secret Queen pawn moving as a pawn.
+        - [x] Secret Queen pawn moving as a queen (and transforming).
+        - [x] Moves by other pieces.
+        - [x] Check and Checkmate detection (visual vs. true status).
+        - [x] Draw conditions (visual vs. true status).
+        - [x] Game start and end sequences.
+        - [x] Disconnects during selection and play (significantly improved with robust reconnection and lobby cleanup).
+    - [x] Address any bugs or inconsistencies found (ongoing, significant progress on join/rejoin logic).
+    - [x] Refine UI messages and interactions for clarity and smoothness (ongoing, some improvements made).
+
+---
+
+## Phase X: Stability & Robustness Enhancements (Completed)
+
+This phase focused on critical improvements to game stability, user experience for joining/rejoining, and server resource management.
+
+- **Checklist**
+    - [x] **URL-Based Game Joining:**
+        - [x] Implemented client-side routing (`react-router-dom`) for direct game access via URL (`/room/:roomId`).
+        - [x] Client automatically joins room if `roomId` is present in URL.
+        - [x] Browser URL updates to reflect the current game room.
+    - [x] **Automatic Lobby Cleanup:**
+        - [x] Server automatically deletes game rooms when all players disconnect.
+        - [x] This allows room names to be reused immediately.
+    - [x] **Robust Reconnection & Session Management:**
+        - [x] Implemented persistent `playerId`s (stored in `localStorage`) for player identification across sessions/tabs.
+        - [x] Server supports rejoining for players.
+        - [x] Implemented "session takeover": Players can rejoin from a new tab/device even if their old connection is still considered active by the server, preventing erroneous "room full" errors.
+        - [x] Resolved server-side issue where a single client socket could inadvertently be assigned to both player slots after a rapid disconnect and rejoin sequence into a newly created room.
+    - [x] **Data Integrity & Error Prevention:**
+        - [x] Sanitized player data emitted from server to client to prevent `RangeError: Maximum call stack size exceeded` due to non-serializable objects.
+
+---
 
 ## Phase 3: Advanced Features & Polish
 
@@ -161,15 +185,15 @@ The final touches to make the app user-friendly and accessible online.
     - [ ] Add user-friendly notifications (e.g., using a library like `react-toastify`) for events like: "Player 2 has joined", "Invalid move", "You win!".
     * [ ] Add a "Game Over" modal showing the winner and a "Play Again" button.
     - [ ] Implement better visual feedback for whose turn it is.
-    - [ ] Handle disconnections gracefully (e.g., end the game or allow reconnection).
+    - [x] Handle disconnections gracefully (Implemented: automatic game ending/lobby cleanup, robust reconnection, session takeover).
 
 ### 4.2: Testing
 - **Checklist**
     - [ ] Write unit tests for your game logic classes on the backend.
     - [x] Test edge cases for "Secret Queen":
-        - [ ] Can a regular pawn still only move one or two squares?
-        - [ ] Does a check from a Secret Queen correctly force the opponent to move out of check?
-        - [ ] Is checkmate by a Secret Queen detected properly?
+        - [x] Can a regular pawn still only move one or two squares?
+        - [x] Does a check from a Secret Queen correctly force the opponent to move out of check?
+        - [x] Is checkmate by a Secret Queen detected properly?
 
 ### 4.3: Deployment
 - **Checklist**
