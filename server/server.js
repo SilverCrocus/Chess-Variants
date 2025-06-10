@@ -7,16 +7,28 @@ const crypto = require('crypto');
 
 const app = express();
 
-app.use(cors({
-  origin: "http://localhost:5173"
-}));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://chess-variants-frontend.onrender.com"
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ["GET", "POST"],
+  credentials: true // Optional: if you plan to use cookies or sessions
+};
+
+app.use(cors(corsOptions));
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
-  }
+  cors: corsOptions // Use the same comprehensive corsOptions here
 });
 
 const PORT = process.env.PORT || 3001;
