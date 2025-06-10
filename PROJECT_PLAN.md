@@ -80,31 +80,30 @@ Now for the fun part. This phase involves adding the specific logic for your cus
     - [x] Update the server's `games` object (player data) to store `secretQueenInitialSquare`, `secretQueenCurrentSquare`, and `secretQueenTransformed` for each player.
     - [x] In `selectSecretQueen` handler, check if both players have selected and emit `allSecretQueensSelected` to start the game.
     - [x] **Crucially, modify the `move` event handler:**
-        - [x] Before validating, check if the piece being moved is the player's untransformed Secret Queen pawn.
-        - [x] **If it is the Secret Queen pawn and `isSecretQueenMove: true` is sent from client:**
-            - [x] Create a temporary `chess.js` instance to validate the move as if the pawn were a queen.
-            - [x] If valid as a queen, update the main game board by removing the pawn and placing a queen (transforming it), and update player's `secretQueenTransformed` and `secretQueenCurrentSquare`.
-            - [x] If invalid as a queen, attempt the move as a regular pawn.
-        - [x] **If it is the Secret Queen pawn and `isSecretQueenMove` is false/not provided:**
-            - [x] Attempt the move as a regular pawn and update `secretQueenCurrentSquare`.
-        - [x] **If it is a regular piece (or a transformed Secret Queen):**
-            - [x] Validate the move normally using `chess.move()`.
-            - [x] If the (already transformed) Secret Queen moves, update its `secretQueenCurrentSquare`.
+        - [x] Server authoritatively checks if the piece being moved is the player's untransformed Secret Queen pawn.
+        - [x] Server attempts pawn move first. If illegal, attempts queen-like move for transformation.
+        - [x] If queen-like move is valid, server updates board, player's `secretQueenTransformed` and `secretQueenCurrentSquare`, and manually flips turn.
+        - [x] If neither pawn nor queen-like move is valid, move is rejected.
+        - [x] If it is a regular piece (or a transformed Secret Queen), validate the move normally.
+        - [x] If the (already transformed) Secret Queen moves, update its `secretQueenCurrentSquare`.
+        - [x] Client no longer sends `isSecretQueenMove` flag; server handles all validation.
     - [x] **Implement the "Post-Move Analysis" logic:**
         - [x] After any valid move, create a temporary "Analysis Board" by copying the FEN.
         - [x] On this Analysis Board, temporarily replace all untransformed Secret Queen pawns with actual queens at their current positions.
         - [x] Use this Analysis Board to determine the true game status (`isCheck`, `isCheckmate`, `isDraw`, etc.).
     - [x] Update the broadcasted `boardUpdate` and `gameOver` events to include this `trueGameStatus` object.
+    - [x] Implemented specific error message for illegal moves when player is in check.
 
 ### 2.2: Frontend Logic for Secret Queen
 - **Checklist**
     - [x] Add `gamePhase` state (`preGame`, `selection`, `playing`).
+    - [x] Implement UI for pawn selection (e.g., clicking a pawn on the starting rank).
+    - [x] Emit `selectSecretQueen` to the server with the chosen square.
     - [x] On `gameStart`, transition to `selection` phase and update status message.
     - [x] Implement `handlePawnClickForSelection` (called by `onSquareClick`) to allow players to click their own pawns on the starting rank during the `selection` phase.
     - [x] On valid pawn click during selection, emit `selectSecretQueen` to the server.
     - [x] Add `myPlayerData` state to store player-specific Secret Queen info (`secretQueenInitialSquare`, `secretQueenCurrentSquare`, `secretQueenTransformed`).
     - [x] Update `myPlayerData` based on `gameJoined`, `gameStart`, `secretQueenSelected`, `allSecretQueensSelected`, and `boardUpdate` events.
-    - [x] On `allSecretQueensSelected` event from server, transition `gamePhase` to `playing` and update status.
     - [x] In `onPieceDrop`, if moving the untransformed Secret Queen, add `isSecretQueenMove: true` to the move object sent to the server.
 
 ### 2.3: UI Enhancements & Status Display
