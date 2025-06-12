@@ -34,6 +34,22 @@ function GameBoard() {
         const playerId = localStorage.getItem('playerId');
         newSocket.emit('joinGame', { roomId: urlRoomId, playerId });
       }
+    } else {
+      // We are on the homepage (path "/") or urlRoomId is undefined
+      // Reset all game-specific states for a clean slate
+      setGame(new Chess());
+      setFen('start'); // Reset to initial board position
+      setPlayerColor(null);
+      setMyPlayerData(null);
+      setGamePhase('preGame'); // Critical for showing the join/create form
+      setStatusMessage('Enter a room ID to join or create a game.'); // Default homepage message
+      setIsResigning(false);
+      setHasResigned(false);
+      setRoom(''); // Clear the room input field state
+      // Reset any other game-specific UI states if necessary, e.g., for Secret Queen selection
+      // setSelectedPawn(null); // Example if such state exists
+      // setSecretQueenPawns({}); // Example if such state exists
+      // setSecretQueenSelectionComplete(false); // Example if such state exists
     }
 
     newSocket.on('connect', () => {
@@ -262,6 +278,12 @@ function GameBoard() {
     }
   };
 
+  const handleGoHome = () => {
+    localStorage.removeItem('roomId');
+    localStorage.removeItem('playerId');
+    navigate('/');
+  };
+
   const handleResign = () => {
     if (socket && gamePhase === 'playing' && !isResigning) {
       setIsResigning(true); // Prevent multiple clicks
@@ -320,6 +342,14 @@ function GameBoard() {
             className="p-2 bg-red-600 hover:bg-red-700 rounded w-full sm:w-auto disabled:opacity-50"
           >
             {hasResigned ? 'Resigned' : isResigning ? 'Resigning...' : 'Resign'}
+          </button>
+        )}
+        {playerColor && ( // Show Home button if playerColor is set (i.e., in a room)
+          <button
+            onClick={handleGoHome}
+            className="mt-2 p-2 bg-gray-600 hover:bg-gray-700 rounded w-full sm:w-auto"
+          >
+            Home
           </button>
         )}
       </div>
