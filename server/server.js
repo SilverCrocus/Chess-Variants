@@ -9,7 +9,8 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://chess-variants-frontend.onrender.com"
+  "https://chess-variants-frontend.onrender.com",
+  "https://mychessvariants.com" // Added your new frontend domain
 ];
 
 const corsOptions = {
