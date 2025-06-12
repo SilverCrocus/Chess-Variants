@@ -19,6 +19,7 @@ function GameBoard() {
   );
   const [gamePhase, setGamePhase] = useState('preGame');
   const [myPlayerData, setMyPlayerData] = useState(null);
+  const [boardWidth, setBoardWidth] = useState(500);
 
   useEffect(() => {
     const newSocket = io(SOCKET_SERVER_URL);
@@ -201,6 +202,19 @@ function GameBoard() {
     });
 
     return () => newSocket.disconnect();
+  }, [urlRoomId]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const screenWidth = window.innerWidth;
+      const newBoardWidth = Math.min(screenWidth * 0.9, 500);
+      setBoardWidth(newBoardWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const isDraggable = ({ piece }) => {
@@ -252,33 +266,33 @@ function GameBoard() {
   }
 
   return (
-    <div className="flex flex-col items-center p-4 bg-gray-800 text-white min-h-screen">
+    <div className="flex flex-col items-center p-2 sm:p-4 bg-gray-800 text-white min-h-screen w-full">
       <h1 className="text-3xl font-bold mb-4">Secret Queen Chess</h1>
       <div className="mb-4 text-lg">{statusMessage}</div>
       
       {gamePhase === 'preGame' && !urlRoomId && (
-        <form onSubmit={handleJoinRoom} className="flex items-center">
+        <form onSubmit={handleJoinRoom} className="flex flex-col sm:flex-row items-center w-full max-w-sm">
           <input
             type="text"
             value={room}
             onChange={(e) => setRoom(e.target.value)}
             placeholder="Enter Room ID"
-            className="p-2 rounded bg-gray-700 border border-gray-600"
+            className="p-2 rounded bg-gray-700 border border-gray-600 w-full mb-2 sm:mb-0 sm:mr-2"
           />
-          <button type="submit" className="ml-2 p-2 bg-blue-600 hover:bg-blue-700 rounded">
+          <button type="submit" className="p-2 bg-blue-600 hover:bg-blue-700 rounded w-full sm:w-auto">
             Join/Create Room
           </button>
         </form>
       )}
 
-      <div className="shadow-2xl">
+      <div className="shadow-2xl w-full flex justify-center">
         <Chessboard
           position={fen}
           onPieceDrop={onPieceDrop}
           onSquareClick={handlePawnClickForSelection}
           arePiecesDraggable={isDraggable}
           boardOrientation={playerColor === 'b' ? 'black' : 'white'}
-          boardWidth={500}
+          boardWidth={boardWidth}
           customSquareStyles={squareStyles}
         />
       </div>
