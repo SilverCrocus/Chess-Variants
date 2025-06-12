@@ -353,6 +353,56 @@ io.on('connection', (socket) => {
     }
   }); // End of socket.on('move', ...)
 
+  socket.on('resign', () => {
+    console.log(`--- RESIGN EVENT --- Socket: ${socket.id}`);
+    const playerInfo = getPlayerInfoBySocketId(socket.id);
+
+    if (!playerInfo) {
+      console.log(`Resign event: Player info not found for socket ${socket.id}. Ignoring.`);
+      socket.emit('gameError', { type: 'resign_failed', message: 'Could not process resignation. Player not found in a game.' });
+      return;
+    }
+
+    const { game, player: resigningPlayer, playerId: resigningPlayerId, roomId } = playerInfo;
+
+    // Ensure there's an opponent
+    if (game.playerIds.length < 2) {
+        console.log(`Resign event: Not enough players in room ${roomId} to resign.`);
+        socket.emit('gameError', { type: 'resign_failed', message: 'Cannot resign without an opponent.' });
+        return;
+    }
+    
+    // Determine winner
+    const winnerColor = resigningPlayer.color === 'w' ? 'b' : 'w';
+    const resigningPlayerDisplayColor = resigningPlayer.color === 'w' ? 'White' : 'Black';
+
+    console.log(`Player ${resigningPlayerId} (${resigningPlayer.color}) resigned in room ${roomId}. ${winnerColor === 'w' ? 'White' : 'Black'} wins.`);
+
+    io.to(roomId).emit('gameOver', {
+      winner: winnerColor,
+      reason: `${resigningPlayerDisplayColor} resigned.`
+    });
+
+    // Clean up disconnect timers for all players in this game
+    game.playerIds.forEach(pid => {
+      if (game.players[pid] && game.players[pid].disconnectTimer) {
+        clearTimeout(game.players[pid].disconnectTimer);
+        game.players[pid].disconnectTimer = null;
+        console.log(`Cleared disconnect timer for player ${pid} in room ${roomId} due to resignation.`);
+      }
+    });
+    
+    // Clean up playerRooms for this game
+    for (const sid in playerRooms) {
+        if (playerRooms[sid] === roomId) {
+            delete playerRooms[sid];
+        }
+    }
+    delete games[roomId]; // Clean up the game from memory
+    console.log(`Game ${roomId} ended due to resignation and was cleaned up.`);
+  });
+
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     const playerInfo = getPlayerInfoBySocketId(socket.id);
