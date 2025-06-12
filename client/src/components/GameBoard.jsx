@@ -7,6 +7,8 @@ import io from 'socket.io-client';
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 function GameBoard() {
+  const [isResigning, setIsResigning] = useState(false); // To disable button after click
+  const [hasResigned, setHasResigned] = useState(false);
   const { roomId: urlRoomId } = useParams();
   const navigate = useNavigate();
   const [game, setGame] = useState(new Chess());
@@ -34,22 +36,11 @@ function GameBoard() {
       }
     }
 
-    const attemptRejoin = () => {
-      const savedRoomId = localStorage.getItem('roomId');
-      const savedPlayerId = localStorage.getItem('playerId');
-      if (savedRoomId && savedPlayerId) {
-        console.log(`Attempting to rejoin game ${savedRoomId} with player ID ${savedPlayerId}`);
-        newSocket.emit('joinGame', { roomId: savedRoomId, playerId: savedPlayerId });
-      }
-    };
-
     newSocket.on('connect', () => {
       console.log('Connected to socket server with ID:', newSocket.id);
       if (urlRoomId) {
         const playerId = localStorage.getItem('playerId');
         newSocket.emit('joinGame', { roomId: urlRoomId, playerId });
-      } else {
-        attemptRejoin();
       }
     });
 
@@ -132,14 +123,14 @@ function GameBoard() {
 
     newSocket.on('allSecretQueensSelected', (data) => {
       console.log('All Secret Queens selected:', data);
-      setFen(data.fen);
-      setGame(new Chess(data.fen));
       setGamePhase('playing');
-      const myPlayerId = localStorage.getItem('playerId');
-      if (myPlayerId && data.players[myPlayerId]) {
-        setMyPlayerData(data.players[myPlayerId]);
+      setStatusMessage("All Secret Queens selected. It's White's turn.");
+      if (myPlayerData && data.players && data.players[myPlayerData.playerId]) {
+        setMyPlayerData(prevData => ({
+          ...prevData,
+          ...data.players[myPlayerData.playerId]
+        }));
       }
-      setStatusMessage(`Both players have selected! It's ${data.turn === 'w' ? 'White' : 'Black'}'s turn.`);
     });
 
     newSocket.on('boardUpdate', (data) => {
@@ -183,14 +174,27 @@ function GameBoard() {
           message = `Game Over: ${data.reason}`;
       }
       setStatusMessage(message);
+
+      // Check if the current player resigned or if the game ended due to any resignation
+      if (data.reason.toLowerCase().includes('resigned')) {
+        // If the reason includes "resigned", we can assume the game ended due to resignation.
+        // We don't necessarily need to check if *this* specific player resigned,
+        // as the button should reflect the game's final state for both players.
+        setHasResigned(true);
+      }
+
       localStorage.removeItem('roomId');
       localStorage.removeItem('playerId');
-      navigate('/', { replace: true }); // Navigate to home on game over
+      // No automatic navigation on game over, user can see the final board.
+      // navigate('/', { replace: true }); 
     });
 
     newSocket.on('gameError', (data) => {
       console.error('Game Error:', data.message);
       setStatusMessage(`Error: ${data.message}`);
+      if (data.type === 'resign_failed') {
+        setIsResigning(false); // Re-enable the button on failure
+      }
     });
 
     newSocket.on('opponentDisconnected', (data) => {
@@ -258,6 +262,15 @@ function GameBoard() {
     }
   };
 
+  const handleResign = () => {
+    if (socket && gamePhase === 'playing' && !isResigning) {
+      setIsResigning(true); // Prevent multiple clicks
+      socket.emit('resign');
+      // Optional: Update status message immediately for the resigning player
+      // setStatusMessage("You have resigned. Waiting for server confirmation...");
+    }
+  };
+
   const squareStyles = {};
   if (myPlayerData?.secretQueenCurrentSquare && !myPlayerData.secretQueenTransformed) {
     squareStyles[myPlayerData.secretQueenCurrentSquare] = {
@@ -296,8 +309,19 @@ function GameBoard() {
           customSquareStyles={squareStyles}
         />
       </div>
-      <div className="mt-4 text-sm text-gray-400">
-        You are playing as: {playerColor === 'w' ? 'White' : playerColor === 'b' ? 'Black' : 'Spectator'}
+      <div className="mt-4 flex flex-col items-center w-full max-w-md">
+        <div className="text-sm text-gray-400 mb-2">
+          You are playing as: {playerColor === 'w' ? 'White' : playerColor === 'b' ? 'Black' : 'Spectator'}
+        </div>
+        {gamePhase === 'playing' && playerColor && (
+          <button
+            onClick={handleResign}
+            disabled={isResigning || hasResigned} // Disable if resigning or already resigned
+            className="p-2 bg-red-600 hover:bg-red-700 rounded w-full sm:w-auto disabled:opacity-50"
+          >
+            {hasResigned ? 'Resigned' : isResigning ? 'Resigning...' : 'Resign'}
+          </button>
+        )}
       </div>
     </div>
   );
