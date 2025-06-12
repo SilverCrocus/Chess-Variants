@@ -14,7 +14,9 @@ function GameBoard() {
   const [socket, setSocket] = useState(null);
   const [room, setRoom] = useState('');
   const [playerColor, setPlayerColor] = useState(null);
-  const [statusMessage, setStatusMessage] = useState('Enter a room ID to join or create a game.');
+  const [statusMessage, setStatusMessage] = useState(
+    urlRoomId ? `Joining room ${urlRoomId}...` : 'Enter a room ID to join or create a game.'
+  );
   const [gamePhase, setGamePhase] = useState('preGame');
   const [myPlayerData, setMyPlayerData] = useState(null);
 
@@ -254,7 +256,7 @@ function GameBoard() {
       <h1 className="text-3xl font-bold mb-4">Secret Queen Chess</h1>
       <div className="mb-4 text-lg">{statusMessage}</div>
       
-      {gamePhase === 'preGame' && (
+      {gamePhase === 'preGame' && !urlRoomId && (
         <form onSubmit={handleJoinRoom} className="flex items-center">
           <input
             type="text"
