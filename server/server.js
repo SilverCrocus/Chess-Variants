@@ -5,6 +5,12 @@ const { Chess } = require('chess.js');
 const cors = require('cors');
 const crypto = require('crypto');
 
+// Replacer function to handle BigInts during JSON.stringify
+const bigIntReplacer = (key, value) =>
+  typeof value === 'bigint'
+    ? value.toString()
+    : value; // return everything else unchanged
+
 const app = express();
 
 const allowedOrigins = [
@@ -150,26 +156,30 @@ io.on('connection', (socket) => {
       const newPlayerId = crypto.randomUUID();
       games[roomId] = {
         chess: chess,
-        players: {
-          [newPlayerId]: {
-            playerId: newPlayerId,
-            socketId: socket.id,
-            color: 'w',
-            secretQueenInitialSquare: null,
-            secretQueenCurrentSquare: null,
-            secretQueenTransformed: false,
-            disconnected: false,
-            disconnectTimer: null,
-          }
-        },
-        playerIds: [newPlayerId],
+        players: {},
+        playerIds: [],
+        rematchOffers: {}, // Initialize rematch offers for the new room
       };
+      const assignedColor = 'w';
+      games[roomId].players[newPlayerId] = {
+        socketId: socket.id,
+        color: assignedColor,
+        playerId: newPlayerId,
+        secretQueenInitialSquare: null,
+        secretQueenCurrentSquare: null,
+        secretQueenTransformed: false,
+        disconnected: false,
+        disconnectTimer: null,
+      };
+      games[roomId].rematchOffers[newPlayerId] = false; // Initialize rematch offer status for the new player
+      games[roomId].playerIds.push(newPlayerId);
       socket.join(roomId);
       playerRooms[socket.id] = roomId;
+
       socket.emit('gameJoined', {
         roomId,
         playerId: newPlayerId,
-        color: 'w',
+        color: assignedColor,
         fen: chess.fen(),
         turn: chess.turn()
       });
@@ -184,20 +194,32 @@ io.on('connection', (socket) => {
       }
 
       const newPlayerId = crypto.randomUUID();
+      const assignedColor = 'b';
       game.players[newPlayerId] = {
-        playerId: newPlayerId,
         socketId: socket.id,
-        color: 'b',
+        color: assignedColor,
+        playerId: newPlayerId,
         secretQueenInitialSquare: null,
         secretQueenCurrentSquare: null,
         secretQueenTransformed: false,
         disconnected: false,
-        disconnectTimer: null,
+        disconnectTimer: null
       };
+      game.rematchOffers[newPlayerId] = false; // Initialize rematch offer status for the new player
       game.playerIds.push(newPlayerId);
       socket.join(roomId);
       playerRooms[socket.id] = roomId;
 
+      // Emit gameJoined specifically to the second player so they know their color and ID
+      socket.emit('gameJoined', {
+        roomId,
+        playerId: newPlayerId,
+        color: assignedColor, // This will be 'b'
+        fen: game.chess.fen(),
+        turn: game.chess.turn()
+      });
+
+      // Then emit gameStart to the whole room
       io.to(roomId).emit('gameStart', {
         roomId,
         fen: game.chess.fen(),
@@ -348,7 +370,10 @@ io.on('connection', (socket) => {
 
       if (trueGameStatus.isCheckmate || trueGameStatus.isDraw) {
         io.to(roomId).emit('gameOver', { status: trueGameStatus });
-        delete games[roomId]; // Clean up the game from memory
+        game.status = 'ended'; // Mark game as ended
+        game.gameOverReason = { status: trueGameStatus }; // Store reason
+        console.log(`Game ${roomId} ended due to checkmate/draw. Status marked, data retained for rematch.`);
+        // delete games[roomId]; // Deferred: Clean up the game from memory
       }
     }
   }); // End of socket.on('move', ...)
@@ -392,13 +417,17 @@ io.on('connection', (socket) => {
       }
     });
     
-    // Clean up playerRooms for this game
+    // Deferred: Clean up playerRooms for this game
+    /*
     for (const sid in playerRooms) {
         if (playerRooms[sid] === roomId) {
             delete playerRooms[sid];
         }
     }
-    delete games[roomId]; // Clean up the game from memory
+    */
+    game.status = 'ended'; // Mark game as ended
+    game.gameOverReason = { winner: winnerColor, reason: `${resigningPlayerDisplayColor} resigned.` }; // Store reason
+    // delete games[roomId]; // Deferred: Clean up the game from memory
     console.log(`Game ${roomId} ended due to resignation and was cleaned up.`);
   });
 
@@ -483,6 +512,103 @@ io.on('connection', (socket) => {
     // Always attempt to clean up the disconnecting socket from playerRooms
     delete playerRooms[socket.id];
   });
+
+  socket.on('offerRematch', (data) => {
+    console.log(`[offerRematch] Received from socket ${socket.id} with data:`, data);
+    const { roomId } = data;
+    const playerInfo = getPlayerInfoBySocketId(socket.id);
+
+    if (!playerInfo || playerInfo.roomId !== roomId) {
+      console.error('offerRematch: Player info not found or room mismatch.');
+      socket.emit('errorGame', { message: 'Error processing rematch offer.' });
+      return;
+    }
+
+    const { game, playerId } = playerInfo;
+    console.log(`[offerRematch] Current game state for room ${playerInfo.roomId} before offer:`, JSON.stringify(game, bigIntReplacer));
+    console.log(`[offerRematch] Rematch offers before this one:`, JSON.stringify(game.rematchOffers));
+
+    if (!game || !game.players[playerId] || !game.rematchOffers) {
+      console.error('offerRematch: Game or player data incomplete.');
+      socket.emit('errorGame', { message: 'Game state error for rematch.' });
+      return;
+    }
+
+    game.rematchOffers[playerId] = true;
+    console.log(`[offerRematch] Player ${playerId} marked as offered. New offers:`, JSON.stringify(game.rematchOffers));
+    console.log(`Player ${playerId} in room ${roomId} offered a rematch.`);
+
+    const opponentId = game.playerIds.find(id => id !== playerId);
+
+    if (opponentId && game.players[opponentId] && game.rematchOffers[opponentId]) {
+      console.log(`[offerRematch] Condition MET: Both players offered rematch.`);
+      // Both players offered a rematch - start a new game
+      console.log(`Both players in room ${roomId} offered rematch. Starting new game.`);
+
+      // 1. Swap colors
+      const p1OldColor = game.players[playerId].color;
+      const p2OldColor = game.players[opponentId].color;
+      game.players[playerId].color = p2OldColor;
+      game.players[opponentId].color = p1OldColor;
+
+      // 2. Reset Secret Queen data for both players
+      [playerId, opponentId].forEach(pId => {
+        game.players[pId].secretQueenInitialSquare = null;
+        game.players[pId].secretQueenCurrentSquare = null;
+        game.players[pId].secretQueenTransformed = false;
+      });
+
+      // 3. Reset board and turn
+      game.chess = new Chess(); // New game instance
+
+      // 4. Reset rematch offers for the new game
+      game.rematchOffers[playerId] = false;
+      game.rematchOffers[opponentId] = false;
+
+      // 5. Emit 'startRematchGame' to each player with their specific new data
+      const commonNewGameData = {
+        roomId,
+        fen: game.chess.fen(),
+        turn: game.chess.turn(),
+        // players: sanitizePlayersForEmit(game.players) // Client expects personalized data
+      };
+
+      // Emit to player 1 (current socket)
+      console.log(`[offerRematch] Emitting 'startRematchGame' to player ${playerId} (socket ${socket.id}) with color ${game.players[playerId].color}`);
+      socket.emit('startRematchGame', {
+        ...commonNewGameData,
+        playerColor: game.players[playerId].color,
+        myPlayerData: sanitizePlayerForEmit(game.players[playerId]),
+      });
+
+      // Emit to player 2 (opponent)
+      console.log(`[offerRematch] Emitting 'startRematchGame' to opponent ${opponentId} (socket ${game.players[opponentId]?.socketId}) with color ${game.players[opponentId]?.color}`);
+      const opponentSocket = io.sockets.sockets.get(game.players[opponentId].socketId);
+      if (opponentSocket) {
+        opponentSocket.emit('startRematchGame', {
+          ...commonNewGameData,
+          playerColor: game.players[opponentId].color,
+          myPlayerData: sanitizePlayerForEmit(game.players[opponentId]),
+        });
+      }
+      console.log(`Rematch started for room ${roomId}. Players swapped sides.`);
+
+    } else if (opponentId && game.players[opponentId] && game.players[opponentId].socketId) {
+      console.log(`[offerRematch] Condition MET: Only current player ${playerId} offered. Notifying opponent ${opponentId}.`);
+      // Only current player offered, notify opponent
+      const opponentSocket = io.sockets.sockets.get(game.players[opponentId].socketId);
+      if (opponentSocket) {
+        console.log(`Notifying opponent ${opponentId} in room ${roomId} about rematch offer.`);
+        console.log(`[offerRematch] Emitting 'rematchOffered' to opponent ${opponentId} at socket ${game.players[opponentId].socketId}`);
+        opponentSocket.emit('rematchOffered', { roomId });
+      }
+    } else {
+      console.log(`Player ${playerId} offered rematch in room ${roomId}, but no opponent found or opponent not connected.`);
+      // Optionally, inform the offering player that opponent is not available
+      socket.emit('statusUpdate', { message: 'Opponent not available for rematch at the moment.' });
+    }
+  });
+
 });
 
 app.get('/', (req, res) => {

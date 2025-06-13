@@ -23,6 +23,8 @@ function GameBoard() {
   const [gamePhase, setGamePhase] = useState('preGame');
   const [myPlayerData, setMyPlayerData] = useState(null);
   const [boardWidth, setBoardWidth] = useState(500);
+  const [rematchOfferSent, setRematchOfferSent] = useState(false);
+  const [opponentOfferedRematch, setOpponentOfferedRematch] = useState(false);
 
   useEffect(() => {
     const newSocket = io(SOCKET_SERVER_URL);
@@ -84,14 +86,25 @@ function GameBoard() {
       setGame(new Chess(data.fen));
       const myData = data.players[data.playerId];
       setMyPlayerData(myData);
-      
-      if (myData.secretQueenInitialSquare) {
-        setGamePhase('playing');
-        setStatusMessage(`Rejoined game. It's ${data.turn === 'w' ? 'White' : 'Black'}'s turn.`);
-      } else {
+
+      if (myData && myData.secretQueenInitialSquare) {
+        // Player is rejoining a game where they already selected their queen
+        setGamePhase(data.gamePhase || 'playing'); 
+        setStatusMessage(`Rejoined game in room ${data.roomId}. You are ${data.color === 'w' ? 'White' : 'Black'}. ${data.turn === myData.color ? 'It\'s your turn.' : 'Waiting for opponent.'}`);
+      } else if (myData) {
+        // Player is joining and needs to select their queen, or game is moving to selection for them
         setGamePhase('selection');
-        setStatusMessage(`Rejoined game. You are ${data.color === 'w' ? 'White' : 'Black'}. Select your Secret Queen pawn.`);
+        setStatusMessage(`Joined room ${data.roomId}. You are ${data.color === 'w' ? 'White' : 'Black'}. Game is starting! Select your Secret Queen pawn.`);
+      } else {
+        // Fallback or error case - should ideally not happen if data is consistent
+        setStatusMessage('Trying to connect to game...'); 
+        console.error('Player data not found in gameRejoined event for player:', data.playerId, data.players);
       }
+
+      // This additional check for allQueensSelected might be redundant if the above logic is sound
+      // or could be used to refine the message further if needed, e.g., if rejoining and all queens are selected but it's not your turn.
+      // For now, the above handles the primary distinction.
+      // if (data.allQueensSelected && gamePhase !== 'selection') { ... }
     });
 
     newSocket.on('gameStart', (data) => {
@@ -191,17 +204,16 @@ function GameBoard() {
           message = `Game Over: ${data.reason}`;
       }
       setStatusMessage(message);
+      setGamePhase('gameOver'); // Set game phase to gameOver
 
       // Check if the current player resigned or if the game ended due to any resignation
       if (data.reason.toLowerCase().includes('resigned')) {
-        // If the reason includes "resigned", we can assume the game ended due to resignation.
-        // We don't necessarily need to check if *this* specific player resigned,
-        // as the button should reflect the game's final state for both players.
         setHasResigned(true);
       }
 
-      localStorage.removeItem('roomId');
-      localStorage.removeItem('playerId');
+      // localStorage items are now cleared in handleGoHome, which is used by Play Again / Go to Homepage
+      // localStorage.removeItem('roomId'); 
+      // localStorage.removeItem('playerId');
       // No automatic navigation on game over, user can see the final board.
       // navigate('/', { replace: true }); 
     });
@@ -220,6 +232,26 @@ function GameBoard() {
 
     newSocket.on('playerReconnected', (data) => {
       setStatusMessage(data.message);
+    });
+
+    newSocket.on('rematchOffered', (data) => {
+      console.log('Opponent offered rematch:', data);
+      setOpponentOfferedRematch(true);
+      setStatusMessage('Opponent has offered a rematch! Click "Accept Rematch" to play again.');
+    });
+
+    newSocket.on('startRematchGame', (newGameData) => {
+      console.log('Rematch starting with new data:', newGameData);
+      setGame(new Chess(newGameData.fen));
+      setFen(newGameData.fen);
+      setPlayerColor(newGameData.playerColor); // Server sends the NEW color for this client
+      setMyPlayerData(newGameData.myPlayerData); // Server sends updated player data
+      setGamePhase('selection'); // Or as per newGameData.gamePhase if provided
+      setStatusMessage(`Rematch started! You are now ${newGameData.playerColor === 'w' ? 'White' : 'Black'}. Select your Secret Queen.`);
+      setRematchOfferSent(false);
+      setOpponentOfferedRematch(false);
+      setHasResigned(false); // Reset resignation status for the new game
+      setIsResigning(false);
     });
 
     return () => newSocket.disconnect();
@@ -282,7 +314,23 @@ function GameBoard() {
   const handleGoHome = () => {
     localStorage.removeItem('roomId');
     localStorage.removeItem('playerId');
+    setRematchOfferSent(false); // Reset rematch states when going home
+    setOpponentOfferedRematch(false);
     navigate('/');
+  };
+
+  const handleRematchOfferClick = () => {
+    if (socket && gamePhase === 'gameOver') {
+      socket.emit('offerRematch', { roomId: room });
+      setRematchOfferSent(true);
+      // Status message will be updated based on opponent's response or if they also offered
+      if (opponentOfferedRematch) {
+        // This means current player is accepting an existing offer
+        setStatusMessage('Rematch accepted! Waiting for new game to start...');
+      } else {
+        setStatusMessage('Rematch offer sent. Waiting for opponent...');
+      }
+    }
   };
 
   const handleResign = () => {
@@ -332,14 +380,32 @@ function GameBoard() {
         ) : (
           <div className="game-controls">
             <p>You are playing as: {playerColor ? (playerColor === 'w' ? 'White' : 'Black') : 'Spectator'}</p>
+            
             {gamePhase === 'playing' && (
               <button onClick={handleResign} disabled={isResigning || hasResigned} className="btn">
                 {hasResigned ? 'Resigned' : 'Resign'}
               </button>
             )}
-            <button onClick={handleGoHome} className="btn btn-secondary">
-              Go to Homepage
-            </button>
+
+            {gamePhase === 'gameOver' && (
+              <button 
+                onClick={handleRematchOfferClick} 
+                className="btn" 
+                disabled={rematchOfferSent && !opponentOfferedRematch} // Disabled if I offered and opponent hasn't responded/offered yet
+              >
+                {rematchOfferSent && opponentOfferedRematch ? 'Starting Rematch...' : 
+                 rematchOfferSent ? 'Rematch Offered' : 
+                 opponentOfferedRematch ? 'Accept Rematch' : 
+                 'Offer Rematch'}
+              </button>
+            )}
+
+            {/* "Go to Homepage" button shown during selection, playing, or game over */}
+            {(gamePhase === 'selection' || gamePhase === 'playing' || gamePhase === 'gameOver') && (
+              <button onClick={handleGoHome} className="btn btn-secondary">
+                Go to Homepage
+              </button>
+            )}
           </div>
         )}
       </div>
