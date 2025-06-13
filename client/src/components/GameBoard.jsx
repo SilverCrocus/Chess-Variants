@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import io from 'socket.io-client';
+import './GameBoard.css';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -301,56 +302,45 @@ function GameBoard() {
   }
 
   return (
-    <div className="flex flex-col items-center p-2 sm:p-4 bg-gray-800 text-white min-h-screen w-full">
-      <h1 className="text-3xl font-bold mb-4">Secret Queen Chess</h1>
-      <div className="mb-4 text-lg">{statusMessage}</div>
-      
-      {gamePhase === 'preGame' && !urlRoomId && (
-        <form onSubmit={handleJoinRoom} className="flex flex-col sm:flex-row items-center w-full max-w-sm">
-          <input
-            type="text"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            placeholder="Enter Room ID"
-            className="p-2 rounded bg-gray-700 border border-gray-600 w-full mb-2 sm:mb-0 sm:mr-2"
-          />
-          <button type="submit" className="p-2 bg-blue-600 hover:bg-blue-700 rounded w-full sm:w-auto">
-            Join/Create Room
-          </button>
-        </form>
-      )}
-
-      <div className="shadow-2xl w-full flex justify-center">
+    <div className="game-container">
+      <div className="chessboard-container">
         <Chessboard
           position={fen}
           onPieceDrop={onPieceDrop}
           onSquareClick={handlePawnClickForSelection}
           arePiecesDraggable={isDraggable}
-          boardOrientation={playerColor === 'b' ? 'black' : 'white'}
           boardWidth={boardWidth}
           customSquareStyles={squareStyles}
+          boardOrientation={playerColor === 'b' ? 'black' : 'white'}
         />
       </div>
-      <div className="mt-4 flex flex-col items-center w-full max-w-md">
-        <div className="text-sm text-gray-400 mb-2">
-          You are playing as: {playerColor === 'w' ? 'White' : playerColor === 'b' ? 'Black' : 'Spectator'}
-        </div>
-        {gamePhase === 'playing' && playerColor && (
-          <button
-            onClick={handleResign}
-            disabled={isResigning || hasResigned} // Disable if resigning or already resigned
-            className="p-2 bg-red-600 hover:bg-red-700 rounded w-full sm:w-auto disabled:opacity-50"
-          >
-            {hasResigned ? 'Resigned' : isResigning ? 'Resigning...' : 'Resign'}
-          </button>
-        )}
-        {playerColor && ( // Show Home button if playerColor is set (i.e., in a room)
-          <button
-            onClick={handleGoHome}
-            className="mt-2 p-2 bg-gray-600 hover:bg-gray-700 rounded w-full sm:w-auto"
-          >
-            Home
-          </button>
+      <div className="game-info">
+        <h2>Secret Queen Chess</h2>
+        <p className="status-message">{statusMessage}</p>
+
+        {gamePhase === 'preGame' ? (
+          <form onSubmit={handleJoinRoom} className="room-form">
+            <input
+              type="text"
+              value={room}
+              onChange={(e) => setRoom(e.target.value)}
+              placeholder="Enter Room ID"
+              className="room-input"
+            />
+            <button type="submit" className="btn">Join/Create Room</button>
+          </form>
+        ) : (
+          <div className="game-controls">
+            <p>You are playing as: {playerColor ? (playerColor === 'w' ? 'White' : 'Black') : 'Spectator'}</p>
+            {gamePhase === 'playing' && (
+              <button onClick={handleResign} disabled={isResigning || hasResigned} className="btn">
+                {hasResigned ? 'Resigned' : 'Resign'}
+              </button>
+            )}
+            <button onClick={handleGoHome} className="btn btn-secondary">
+              Go to Homepage
+            </button>
+          </div>
         )}
       </div>
     </div>
