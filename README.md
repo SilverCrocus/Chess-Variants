@@ -14,7 +14,7 @@ This application features a real-time, two-player online experience.
     *   Game status (check, checkmate, draw) is determined based on the "true" power of the Secret Queens, even before they transform.
 *   **Real-time Multiplayer:** Play against another person online.
 *   **Room-Based Games:** Create or join game rooms using simple names.
-*   **URL-Based Room Joining:** Join games directly via a shared URL (e.g., `your-app-url.com/room/my-game-room`).
+*   **URL-Based Room Joining:** Join games directly via a shared URL (e.g., `mychessvariants.com/room/my-game-room`).
 *   **Persistent Player Sessions:** Rejoin games even after accidental disconnection or closing the browser tab.
 *   **Automatic Lobby Cleanup:** Game rooms are automatically cleaned up when empty, allowing room names to be reused.
 *   **Clear UI:** Visual indicators for selected Secret Queens (visible to self before transformation) and game status.
@@ -69,7 +69,7 @@ chess-variants/
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repository-url>
+    git clone https://github.com/SilverCrocus/Chess-Variants.git
     cd chess-variants
     ```
 
@@ -102,7 +102,7 @@ chess-variants/
 
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. Please feel free to check the [issues page](<your-repo-url/issues>) if you want to contribute.
+Contributions, issues, and feature requests are welcome. Please feel free to check the [issues page](<https://github.com/SilverCrocus/Chess-Variants/issues>) if you want to contribute.
 
 ---
 

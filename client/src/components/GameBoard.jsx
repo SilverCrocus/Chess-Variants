@@ -25,6 +25,7 @@ function GameBoard() {
   const [boardWidth, setBoardWidth] = useState(500);
   const [rematchOfferSent, setRematchOfferSent] = useState(false);
   const [opponentOfferedRematch, setOpponentOfferedRematch] = useState(false);
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
 
   useEffect(() => {
     const newSocket = io(SOCKET_SERVER_URL);
@@ -105,6 +106,13 @@ function GameBoard() {
       // or could be used to refine the message further if needed, e.g., if rejoining and all queens are selected but it's not your turn.
       // For now, the above handles the primary distinction.
       // if (data.allQueensSelected && gamePhase !== 'selection') { ... }
+
+      const opponentId = Object.keys(data.players).find(id => id !== data.playerId);
+      if (opponentId && data.players[opponentId]?.disconnected) {
+        setOpponentDisconnected(true);
+      } else {
+        setOpponentDisconnected(false);
+      }
     });
 
     newSocket.on('gameStart', (data) => {
@@ -139,6 +147,7 @@ function GameBoard() {
       setGamePhase('selection');
       const colorName = myData?.color === 'w' ? 'White' : 'Black';
       setStatusMessage(`Game started. You are ${colorName}. Select your Secret Queen pawn.`);
+      setOpponentDisconnected(false);
     });
 
     newSocket.on('secretQueenSelected', (data) => {
@@ -228,10 +237,12 @@ function GameBoard() {
 
     newSocket.on('opponentDisconnected', (data) => {
       setStatusMessage(data.message);
+      setOpponentDisconnected(true);
     });
 
     newSocket.on('playerReconnected', (data) => {
       setStatusMessage(data.message);
+      setOpponentDisconnected(false);
     });
 
     newSocket.on('rematchOffered', (data) => {
@@ -252,6 +263,16 @@ function GameBoard() {
       setOpponentOfferedRematch(false);
       setHasResigned(false); // Reset resignation status for the new game
       setIsResigning(false);
+      setOpponentDisconnected(false);
+    });
+
+    newSocket.on('rematchCancelled', ({ message }) => {
+      console.log('Rematch cancelled by server:', message);
+      setStatusMessage(message);
+      setOpponentOfferedRematch(false); // Ensure opponent's offer is cleared from UI
+      setRematchOfferSent(false); // Reset button state
+      setGamePhase('gameOver'); // Keep it in the gameOver phase, but with buttons reset
+      setOpponentDisconnected(true);
     });
 
     return () => newSocket.disconnect();
@@ -391,9 +412,10 @@ function GameBoard() {
               <button 
                 onClick={handleRematchOfferClick} 
                 className="btn" 
-                disabled={rematchOfferSent && !opponentOfferedRematch} // Disabled if I offered and opponent hasn't responded/offered yet
+                disabled={opponentDisconnected || (rematchOfferSent && !opponentOfferedRematch)}
               >
-                {rematchOfferSent && opponentOfferedRematch ? 'Starting Rematch...' : 
+                {opponentDisconnected ? 'Opponent Left' : 
+                 rematchOfferSent && opponentOfferedRematch ? 'Starting Rematch...' : 
                  rematchOfferSent ? 'Rematch Offered' : 
                  opponentOfferedRematch ? 'Accept Rematch' : 
                  'Offer Rematch'}

@@ -58,6 +58,30 @@ const sanitizePlayersForEmit = (playersObject) => {
   return sanitized;
 };
 
+const cleanupGame = (roomId) => {
+  const game = games[roomId];
+  if (!game) return;
+
+  // Clean up disconnect timers for all players in this game
+  game.playerIds.forEach(pid => {
+    if (game.players[pid] && game.players[pid].disconnectTimer) {
+      clearTimeout(game.players[pid].disconnectTimer);
+      game.players[pid].disconnectTimer = null;
+    }
+  });
+
+  // Clean up playerRooms for this game
+  for (const sid in playerRooms) {
+    if (playerRooms[sid] === roomId) {
+      delete playerRooms[sid];
+    }
+  }
+
+  // Delete the game itself
+  delete games[roomId];
+  console.log(`Game ${roomId} has been cleaned up and removed from memory.`);
+};
+
 const getPlayerInfoBySocketId = (socketId) => {
   const roomId = playerRooms[socketId];
   if (!roomId || !games[roomId]) return null;
@@ -390,14 +414,12 @@ io.on('connection', (socket) => {
 
     const { game, player: resigningPlayer, playerId: resigningPlayerId, roomId } = playerInfo;
 
-    // Ensure there's an opponent
     if (game.playerIds.length < 2) {
         console.log(`Resign event: Not enough players in room ${roomId} to resign.`);
         socket.emit('gameError', { type: 'resign_failed', message: 'Cannot resign without an opponent.' });
         return;
     }
     
-    // Determine winner
     const winnerColor = resigningPlayer.color === 'w' ? 'b' : 'w';
     const resigningPlayerDisplayColor = resigningPlayer.color === 'w' ? 'White' : 'Black';
 
@@ -408,29 +430,10 @@ io.on('connection', (socket) => {
       reason: `${resigningPlayerDisplayColor} resigned.`
     });
 
-    // Clean up disconnect timers for all players in this game
-    game.playerIds.forEach(pid => {
-      if (game.players[pid] && game.players[pid].disconnectTimer) {
-        clearTimeout(game.players[pid].disconnectTimer);
-        game.players[pid].disconnectTimer = null;
-        console.log(`Cleared disconnect timer for player ${pid} in room ${roomId} due to resignation.`);
-      }
-    });
-    
-    // Deferred: Clean up playerRooms for this game
-    /*
-    for (const sid in playerRooms) {
-        if (playerRooms[sid] === roomId) {
-            delete playerRooms[sid];
-        }
-    }
-    */
-    game.status = 'ended'; // Mark game as ended
-    game.gameOverReason = { winner: winnerColor, reason: `${resigningPlayerDisplayColor} resigned.` }; // Store reason
-    // delete games[roomId]; // Deferred: Clean up the game from memory
-    console.log(`Game ${roomId} ended due to resignation and was cleaned up.`);
+    game.status = 'ended';
+    game.gameOverReason = { winner: winnerColor, reason: `${resigningPlayerDisplayColor} resigned.` };
+    console.log(`Game ${roomId} ended due to resignation. Status marked, data retained for rematch.`);
   });
-
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
@@ -438,79 +441,51 @@ io.on('connection', (socket) => {
 
     if (playerInfo) {
       const { game, player, playerId, roomId } = playerInfo;
-      
-      player.disconnected = true; // Mark current player as disconnected
+
+      if (game.status === 'ended') {
+        console.log(`Player ${playerId} disconnected from an ended game in room ${roomId}. Cleaning up.`);
+        const opponentId = game.playerIds.find(id => id !== playerId);
+        if (opponentId && game.players[opponentId] && !game.players[opponentId].disconnected) {
+          const opponentSocket = io.sockets.sockets.get(game.players[opponentId].socketId);
+          if (opponentSocket) {
+            opponentSocket.emit('rematchCancelled', { message: 'Your opponent disconnected. The game has been cleared.' });
+          }
+        }
+        cleanupGame(roomId);
+        return;
+      }
+
+      player.disconnected = true;
       console.log(`Player ${playerId} (${player.color}) in room ${roomId} has disconnected.`);
 
-      // Check if the game is a two-player game and the other player is also disconnected
       if (game.playerIds.length === 2) {
         const opponentId = game.playerIds.find(id => id !== playerId);
         const opponent = opponentId ? game.players[opponentId] : null;
 
         if (opponent && opponent.disconnected) {
-          // Both players are now disconnected. Clean up the game immediately.
           console.log(`Both players in room ${roomId} are disconnected. Deleting game.`);
-          
-          // Clear any existing timers for both players
-          if (player.disconnectTimer) {
-            clearTimeout(player.disconnectTimer);
-            player.disconnectTimer = null;
-          }
-          if (opponent.disconnectTimer) {
-            clearTimeout(opponent.disconnectTimer);
-            opponent.disconnectTimer = null;
-          }
-          
-          delete games[roomId];
-          // Clean up playerRooms for this game
-          for (const sid in playerRooms) {
-              if (playerRooms[sid] === roomId) {
-                  delete playerRooms[sid];
-              }
-          }
-          // playerRooms[socket.id] will be deleted by the line at the end of this handler.
-          return; // Exit early
+          cleanupGame(roomId);
+          return;
+        }
+
+        if (opponent && opponent.socketId) {
+          io.to(opponent.socketId).emit('playerDisconnected', {
+            message: `Your opponent has disconnected. They have a short time to reconnect.`
+          });
         }
       }
 
-      // If we reach here, either it's not a 2-player game where both are disconnected, or the opponent is still connected.
-      const opponentIdToNotify = game.playerIds.find(id => id !== playerId);
-      if (opponentIdToNotify && game.players[opponentIdToNotify] && !game.players[opponentIdToNotify].disconnected) {
-        // Opponent exists and is connected
-        io.to(game.players[opponentIdToNotify].socketId).emit('opponentDisconnected', {
-          message: 'Your opponent has disconnected. They have 3 minutes to reconnect.'
-        });
-        
-        // Start abandonment timer for the current player
-        console.log(`Starting 3-minute abandonment timer for player ${playerId} (${player.color}) in room ${roomId}.`);
-        player.disconnectTimer = setTimeout(() => {
-          if (games[roomId] && games[roomId].players[playerId]?.disconnected) {
-            console.log(`Player ${playerId} (${player.color}) did not reconnect in time. Game in room ${roomId} abandoned.`);
-            
-            const winnerColorOnTimeout = player.color === 'w' ? 'b' : 'w'; // The other player wins
-
-            io.to(roomId).emit('gameOver', {
-              winner: winnerColorOnTimeout,
-              reason: `Game abandoned. ${player.color === 'w' ? 'White' : 'Black'} disconnected and did not rejoin.`
-            });
-            delete games[roomId];
-            for (const sid in playerRooms) {
-                if (playerRooms[sid] === roomId) {
-                    delete playerRooms[sid];
-                }
-            }
-          }
-        }, 3 * 60 * 1000); // 3 minutes
-
-      } else if (game.playerIds.length === 1 && game.playerIds[0] === playerId) {
-        // This was the only player in the game.
-        console.log(`Single player ${playerId} (${player.color}) in room ${roomId} disconnected. Deleting game immediately.`);
-        delete games[roomId];
-        // playerRooms[socket.id] will be deleted by the line at the end of this handler.
-      }
+      const cleanupDelay = 300000; // 5 minutes
+      console.log(`Starting 5-minute cleanup timer for player ${playerId} in room ${roomId}.`);
+      player.disconnectTimer = setTimeout(() => {
+        console.log(`Cleanup timer expired for player ${playerId} in room ${roomId}.`);
+        if (games[roomId]) {
+            cleanupGame(roomId);
+        }
+      }, cleanupDelay);
+    } else {
+        console.log(`Socket ${socket.id} disconnected without being in a game.`);
     }
-    // Always attempt to clean up the disconnecting socket from playerRooms
-    delete playerRooms[socket.id];
   });
 
   socket.on('offerRematch', (data) => {
