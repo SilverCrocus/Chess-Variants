@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import io from 'socket.io-client';
+import './GameBoard.css';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -22,6 +23,9 @@ function GameBoard() {
   const [gamePhase, setGamePhase] = useState('preGame');
   const [myPlayerData, setMyPlayerData] = useState(null);
   const [boardWidth, setBoardWidth] = useState(500);
+  const [rematchOfferSent, setRematchOfferSent] = useState(false);
+  const [opponentOfferedRematch, setOpponentOfferedRematch] = useState(false);
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
 
   useEffect(() => {
     const newSocket = io(SOCKET_SERVER_URL);
@@ -83,13 +87,31 @@ function GameBoard() {
       setGame(new Chess(data.fen));
       const myData = data.players[data.playerId];
       setMyPlayerData(myData);
-      
-      if (myData.secretQueenInitialSquare) {
-        setGamePhase('playing');
-        setStatusMessage(`Rejoined game. It's ${data.turn === 'w' ? 'White' : 'Black'}'s turn.`);
-      } else {
+
+      if (myData && myData.secretQueenInitialSquare) {
+        // Player is rejoining a game where they already selected their queen
+        setGamePhase(data.gamePhase || 'playing'); 
+        setStatusMessage(`Rejoined game in room ${data.roomId}. You are ${data.color === 'w' ? 'White' : 'Black'}. ${data.turn === myData.color ? 'It\'s your turn.' : 'Waiting for opponent.'}`);
+      } else if (myData) {
+        // Player is joining and needs to select their queen, or game is moving to selection for them
         setGamePhase('selection');
-        setStatusMessage(`Rejoined game. You are ${data.color === 'w' ? 'White' : 'Black'}. Select your Secret Queen pawn.`);
+        setStatusMessage(`Joined room ${data.roomId}. You are ${data.color === 'w' ? 'White' : 'Black'}. Game is starting! Select your Secret Queen pawn.`);
+      } else {
+        // Fallback or error case - should ideally not happen if data is consistent
+        setStatusMessage('Trying to connect to game...'); 
+        console.error('Player data not found in gameRejoined event for player:', data.playerId, data.players);
+      }
+
+      // This additional check for allQueensSelected might be redundant if the above logic is sound
+      // or could be used to refine the message further if needed, e.g., if rejoining and all queens are selected but it's not your turn.
+      // For now, the above handles the primary distinction.
+      // if (data.allQueensSelected && gamePhase !== 'selection') { ... }
+
+      const opponentId = Object.keys(data.players).find(id => id !== data.playerId);
+      if (opponentId && data.players[opponentId]?.disconnected) {
+        setOpponentDisconnected(true);
+      } else {
+        setOpponentDisconnected(false);
       }
     });
 
@@ -125,6 +147,7 @@ function GameBoard() {
       setGamePhase('selection');
       const colorName = myData?.color === 'w' ? 'White' : 'Black';
       setStatusMessage(`Game started. You are ${colorName}. Select your Secret Queen pawn.`);
+      setOpponentDisconnected(false);
     });
 
     newSocket.on('secretQueenSelected', (data) => {
@@ -190,17 +213,16 @@ function GameBoard() {
           message = `Game Over: ${data.reason}`;
       }
       setStatusMessage(message);
+      setGamePhase('gameOver'); // Set game phase to gameOver
 
       // Check if the current player resigned or if the game ended due to any resignation
       if (data.reason.toLowerCase().includes('resigned')) {
-        // If the reason includes "resigned", we can assume the game ended due to resignation.
-        // We don't necessarily need to check if *this* specific player resigned,
-        // as the button should reflect the game's final state for both players.
         setHasResigned(true);
       }
 
-      localStorage.removeItem('roomId');
-      localStorage.removeItem('playerId');
+      // localStorage items are now cleared in handleGoHome, which is used by Play Again / Go to Homepage
+      // localStorage.removeItem('roomId'); 
+      // localStorage.removeItem('playerId');
       // No automatic navigation on game over, user can see the final board.
       // navigate('/', { replace: true }); 
     });
@@ -215,10 +237,42 @@ function GameBoard() {
 
     newSocket.on('opponentDisconnected', (data) => {
       setStatusMessage(data.message);
+      setOpponentDisconnected(true);
     });
 
     newSocket.on('playerReconnected', (data) => {
       setStatusMessage(data.message);
+      setOpponentDisconnected(false);
+    });
+
+    newSocket.on('rematchOffered', (data) => {
+      console.log('Opponent offered rematch:', data);
+      setOpponentOfferedRematch(true);
+      setStatusMessage('Opponent has offered a rematch! Click "Accept Rematch" to play again.');
+    });
+
+    newSocket.on('startRematchGame', (newGameData) => {
+      console.log('Rematch starting with new data:', newGameData);
+      setGame(new Chess(newGameData.fen));
+      setFen(newGameData.fen);
+      setPlayerColor(newGameData.playerColor); // Server sends the NEW color for this client
+      setMyPlayerData(newGameData.myPlayerData); // Server sends updated player data
+      setGamePhase('selection'); // Or as per newGameData.gamePhase if provided
+      setStatusMessage(`Rematch started! You are now ${newGameData.playerColor === 'w' ? 'White' : 'Black'}. Select your Secret Queen.`);
+      setRematchOfferSent(false);
+      setOpponentOfferedRematch(false);
+      setHasResigned(false); // Reset resignation status for the new game
+      setIsResigning(false);
+      setOpponentDisconnected(false);
+    });
+
+    newSocket.on('rematchCancelled', ({ message }) => {
+      console.log('Rematch cancelled by server:', message);
+      setStatusMessage(message);
+      setOpponentOfferedRematch(false); // Ensure opponent's offer is cleared from UI
+      setRematchOfferSent(false); // Reset button state
+      setGamePhase('gameOver'); // Keep it in the gameOver phase, but with buttons reset
+      setOpponentDisconnected(true);
     });
 
     return () => newSocket.disconnect();
@@ -281,7 +335,23 @@ function GameBoard() {
   const handleGoHome = () => {
     localStorage.removeItem('roomId');
     localStorage.removeItem('playerId');
+    setRematchOfferSent(false); // Reset rematch states when going home
+    setOpponentOfferedRematch(false);
     navigate('/');
+  };
+
+  const handleRematchOfferClick = () => {
+    if (socket && gamePhase === 'gameOver') {
+      socket.emit('offerRematch', { roomId: room });
+      setRematchOfferSent(true);
+      // Status message will be updated based on opponent's response or if they also offered
+      if (opponentOfferedRematch) {
+        // This means current player is accepting an existing offer
+        setStatusMessage('Rematch accepted! Waiting for new game to start...');
+      } else {
+        setStatusMessage('Rematch offer sent. Waiting for opponent...');
+      }
+    }
   };
 
   const handleResign = () => {
@@ -301,56 +371,64 @@ function GameBoard() {
   }
 
   return (
-    <div className="flex flex-col items-center p-2 sm:p-4 bg-gray-800 text-white min-h-screen w-full">
-      <h1 className="text-3xl font-bold mb-4">Secret Queen Chess</h1>
-      <div className="mb-4 text-lg">{statusMessage}</div>
-      
-      {gamePhase === 'preGame' && !urlRoomId && (
-        <form onSubmit={handleJoinRoom} className="flex flex-col sm:flex-row items-center w-full max-w-sm">
-          <input
-            type="text"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            placeholder="Enter Room ID"
-            className="p-2 rounded bg-gray-700 border border-gray-600 w-full mb-2 sm:mb-0 sm:mr-2"
-          />
-          <button type="submit" className="p-2 bg-blue-600 hover:bg-blue-700 rounded w-full sm:w-auto">
-            Join/Create Room
-          </button>
-        </form>
-      )}
-
-      <div className="shadow-2xl w-full flex justify-center">
+    <div className="game-container">
+      <div className="chessboard-container">
         <Chessboard
           position={fen}
           onPieceDrop={onPieceDrop}
           onSquareClick={handlePawnClickForSelection}
           arePiecesDraggable={isDraggable}
-          boardOrientation={playerColor === 'b' ? 'black' : 'white'}
           boardWidth={boardWidth}
           customSquareStyles={squareStyles}
+          boardOrientation={playerColor === 'b' ? 'black' : 'white'}
         />
       </div>
-      <div className="mt-4 flex flex-col items-center w-full max-w-md">
-        <div className="text-sm text-gray-400 mb-2">
-          You are playing as: {playerColor === 'w' ? 'White' : playerColor === 'b' ? 'Black' : 'Spectator'}
-        </div>
-        {gamePhase === 'playing' && playerColor && (
-          <button
-            onClick={handleResign}
-            disabled={isResigning || hasResigned} // Disable if resigning or already resigned
-            className="p-2 bg-red-600 hover:bg-red-700 rounded w-full sm:w-auto disabled:opacity-50"
-          >
-            {hasResigned ? 'Resigned' : isResigning ? 'Resigning...' : 'Resign'}
-          </button>
-        )}
-        {playerColor && ( // Show Home button if playerColor is set (i.e., in a room)
-          <button
-            onClick={handleGoHome}
-            className="mt-2 p-2 bg-gray-600 hover:bg-gray-700 rounded w-full sm:w-auto"
-          >
-            Home
-          </button>
+      <div className="game-info">
+        <h2>Secret Queen Chess</h2>
+        <p className="status-message">{statusMessage}</p>
+
+        {gamePhase === 'preGame' ? (
+          <form onSubmit={handleJoinRoom} className="room-form">
+            <input
+              type="text"
+              value={room}
+              onChange={(e) => setRoom(e.target.value)}
+              placeholder="Enter Room ID"
+              className="room-input"
+            />
+            <button type="submit" className="btn">Join/Create Room</button>
+          </form>
+        ) : (
+          <div className="game-controls">
+            <p>You are playing as: {playerColor ? (playerColor === 'w' ? 'White' : 'Black') : 'Spectator'}</p>
+            
+            {gamePhase === 'playing' && (
+              <button onClick={handleResign} disabled={isResigning || hasResigned} className="btn">
+                {hasResigned ? 'Resigned' : 'Resign'}
+              </button>
+            )}
+
+            {gamePhase === 'gameOver' && (
+              <button 
+                onClick={handleRematchOfferClick} 
+                className="btn" 
+                disabled={opponentDisconnected || (rematchOfferSent && !opponentOfferedRematch)}
+              >
+                {opponentDisconnected ? 'Opponent Left' : 
+                 rematchOfferSent && opponentOfferedRematch ? 'Starting Rematch...' : 
+                 rematchOfferSent ? 'Rematch Offered' : 
+                 opponentOfferedRematch ? 'Accept Rematch' : 
+                 'Offer Rematch'}
+              </button>
+            )}
+
+            {/* "Go to Homepage" button shown during selection, playing, or game over */}
+            {(gamePhase === 'selection' || gamePhase === 'playing' || gamePhase === 'gameOver') && (
+              <button onClick={handleGoHome} className="btn btn-secondary">
+                Go to Homepage
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

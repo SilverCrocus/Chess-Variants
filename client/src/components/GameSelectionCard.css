@@ -1,0 +1,30 @@
+.game-selection-card {
+  background-color: #3a3835;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s;
+  height: 150px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.game-selection-card:hover {
+  transform: translateY(-5px);
+}
+
+.game-selection-card.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.game-selection-card.disabled:hover {
+  transform: none;
+}
+
+h3 {
+  margin: 0;
+  font-size: 1.5rem;
+}
