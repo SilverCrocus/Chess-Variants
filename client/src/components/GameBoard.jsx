@@ -26,6 +26,10 @@ function GameBoard() {
   const [rematchOfferSent, setRematchOfferSent] = useState(false);
   const [opponentOfferedRematch, setOpponentOfferedRematch] = useState(false);
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
+  const [disconnectCountdown, setDisconnectCountdown] = useState(0);
+  const [countdownInterval, setCountdownInterval] = useState(null);
+  const [drawOfferSent, setDrawOfferSent] = useState(false);
+  const [opponentOfferedDraw, setOpponentOfferedDraw] = useState(false);
 
   useEffect(() => {
     const newSocket = io(SOCKET_SERVER_URL);
@@ -36,6 +40,7 @@ function GameBoard() {
       // Attempt to join game if socket is already connected, or rely on 'connect' event
       if (newSocket.connected) {
         const playerId = localStorage.getItem('playerId');
+        console.log('Attempting to join game immediately. PlayerId from localStorage:', playerId, 'Room:', urlRoomId);
         newSocket.emit('joinGame', { roomId: urlRoomId, playerId });
       }
     } else {
@@ -58,8 +63,11 @@ function GameBoard() {
 
     newSocket.on('connect', () => {
       console.log('Connected to socket server with ID:', newSocket.id);
+      console.log('Reconnection attempt:', newSocket.io.engine.transport.name);
+      console.log('Reconnection attempt timestamp:', new Date().toISOString());
       if (urlRoomId) {
         const playerId = localStorage.getItem('playerId');
+        console.log('Attempting to join game on connect event. PlayerId from localStorage:', playerId, 'Room:', urlRoomId);
         newSocket.emit('joinGame', { roomId: urlRoomId, playerId });
       }
     });
@@ -238,17 +246,83 @@ function GameBoard() {
     newSocket.on('opponentDisconnected', (data) => {
       setStatusMessage(data.message);
       setOpponentDisconnected(true);
+      setDisconnectCountdown(30); // 30 seconds countdown
+      const intervalId = setInterval(() => {
+        setDisconnectCountdown(prevCountdown => prevCountdown - 1);
+      }, 1000);
+      setCountdownInterval(intervalId);
     });
 
     newSocket.on('playerReconnected', (data) => {
       setStatusMessage(data.message);
       setOpponentDisconnected(false);
+      clearInterval(countdownInterval);
+      setDisconnectCountdown(0);
     });
 
     newSocket.on('rematchOffered', (data) => {
       console.log('Opponent offered rematch:', data);
       setOpponentOfferedRematch(true);
       setStatusMessage('Opponent has offered a rematch! Click "Accept Rematch" to play again.');
+    });
+
+    newSocket.on('drawOffered', (data) => {
+      console.log('Draw offered by opponent:', data);
+      console.log('Current game phase:', gamePhase);
+      console.log('Current player color:', playerColor);
+      setOpponentOfferedDraw(true);
+      setStatusMessage('Opponent offered a draw. Use the "Accept Draw" or "Decline Draw" buttons to respond.');
+    });
+
+    newSocket.on('drawAccepted', (data) => {
+      console.log('Draw accepted:', data);
+      setGamePhase('gameOver');
+      setStatusMessage('Draw accepted! The game ended in a draw.');
+      setDrawOfferSent(false);
+      setOpponentOfferedDraw(false);
+    });
+
+    newSocket.on('drawDeclined', (data) => {
+      console.log('Draw declined by opponent:', data);
+      setDrawOfferSent(false);
+      setStatusMessage('Opponent declined the draw offer.');
+    });
+
+    newSocket.on('playerDisconnected', (data) => {
+      console.log('Player disconnected:', data);
+      setStatusMessage(data.message);
+      setOpponentDisconnected(true);
+      setDisconnectCountdown(300); // 5 minutes = 300 seconds
+      
+      // Clear any existing countdown interval
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+      
+      const intervalId = setInterval(() => {
+        setDisconnectCountdown(prevCountdown => {
+          if (prevCountdown <= 1) {
+            clearInterval(intervalId);
+            setCountdownInterval(null);
+            return 0;
+          }
+          return prevCountdown - 1;
+        });
+      }, 1000);
+      setCountdownInterval(intervalId);
+    });
+
+    newSocket.on('playerReconnected', (data) => {
+      console.log('Player reconnected:', data);
+      setStatusMessage(data.message || 'Your opponent has reconnected.');
+      setOpponentDisconnected(false);
+      setDisconnectCountdown(0);
+      
+      // Clear countdown interval
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        setCountdownInterval(null);
+      }
     });
 
     newSocket.on('startRematchGame', (newGameData) => {
@@ -275,7 +349,30 @@ function GameBoard() {
       setOpponentDisconnected(true);
     });
 
-    return () => newSocket.disconnect();
+    return () => {
+      newSocket.off('joinGame');
+      newSocket.off('gameError');
+      newSocket.off('boardUpdate');
+      newSocket.off('gameStart');
+      newSocket.off('invalidMove');
+      newSocket.off('gameOver');
+      newSocket.off('rematchOffered');
+      newSocket.off('startRematchGame');
+      newSocket.off('opponentDisconnected');
+      newSocket.off('playerReconnected');
+      newSocket.off('drawOffered');
+      newSocket.off('drawAccepted');
+      newSocket.off('drawDeclined');
+      newSocket.off('playerDisconnected');
+      newSocket.off('playerReconnected');
+      
+      // Clean up countdown interval
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+      
+      newSocket.disconnect();
+    };
   }, [urlRoomId]);
 
   useEffect(() => {
@@ -354,6 +451,29 @@ function GameBoard() {
     }
   };
 
+  const handleOfferDraw = () => {
+    if (socket && gamePhase === 'playing' && !drawOfferSent) {
+      socket.emit('offerDraw', { roomId: room });
+      setDrawOfferSent(true);
+      setStatusMessage('Draw offer sent. Waiting for opponent response...');
+    }
+  };
+
+  const handleAcceptDraw = () => {
+    if (socket && opponentOfferedDraw) {
+      socket.emit('acceptDraw', { roomId: room });
+      setOpponentOfferedDraw(false);
+    }
+  };
+
+  const handleDeclineDraw = () => {
+    if (socket && opponentOfferedDraw) {
+      socket.emit('declineDraw', { roomId: room });
+      setOpponentOfferedDraw(false);
+      setStatusMessage('You declined the draw offer. Continue playing.');
+    }
+  };
+
   const handleResign = () => {
     if (socket && gamePhase === 'playing' && !isResigning) {
       setIsResigning(true); // Prevent multiple clicks
@@ -387,6 +507,21 @@ function GameBoard() {
         <h2>Secret Queen Chess</h2>
         <p className="status-message">{statusMessage}</p>
 
+        {/* Opponent disconnected notification with countdown */}
+        {opponentDisconnected && disconnectCountdown > 0 && (
+          <div className="disconnect-notification">
+            <p className="disconnect-message">
+              ⚠️ Your opponent has disconnected
+            </p>
+            <p className="countdown-timer">
+              Reconnection window: {Math.floor(disconnectCountdown / 60)}:{(disconnectCountdown % 60).toString().padStart(2, '0')}
+            </p>
+            <p className="countdown-subtext">
+              Game will be terminated if they don't reconnect within {Math.floor(disconnectCountdown / 60)}:{(disconnectCountdown % 60).toString().padStart(2, '0')}
+            </p>
+          </div>
+        )}
+        
         {gamePhase === 'preGame' ? (
           <form onSubmit={handleJoinRoom} className="room-form">
             <input
@@ -406,6 +541,27 @@ function GameBoard() {
               <button onClick={handleResign} disabled={isResigning || hasResigned} className="btn">
                 {hasResigned ? 'Resigned' : 'Resign'}
               </button>
+            )}
+
+            {gamePhase === 'playing' && !opponentOfferedDraw && (
+              <button 
+                onClick={handleOfferDraw} 
+                disabled={drawOfferSent} 
+                className="btn"
+              >
+                {drawOfferSent ? 'Draw Offered' : 'Offer Draw'}
+              </button>
+            )}
+
+            {gamePhase === 'playing' && opponentOfferedDraw && (
+              <div className="draw-response-buttons">
+                <button onClick={handleAcceptDraw} className="btn btn-success">
+                  Accept Draw
+                </button>
+                <button onClick={handleDeclineDraw} className="btn btn-danger">
+                  Decline Draw
+                </button>
+              </div>
             )}
 
             {gamePhase === 'gameOver' && (

@@ -183,6 +183,7 @@ io.on('connection', (socket) => {
         players: {},
         playerIds: [],
         rematchOffers: {}, // Initialize rematch offers for the new room
+        gamePhase: 'setup' // Initialize game phase
       };
       const assignedColor = 'w';
       games[roomId].players[newPlayerId] = {
@@ -277,7 +278,14 @@ io.on('connection', (socket) => {
 
     const allPlayersSelected = game.playerIds.every(id => game.players[id].secretQueenInitialSquare);
     if (game.playerIds.length === 2 && allPlayersSelected) {
-      io.to(roomId).emit('allSecretQueensSelected', { players: sanitizePlayersForEmit(game.players) });
+      // Transition game phase to 'playing' when all Secret Queens are selected
+      game.gamePhase = 'playing';
+      console.log(`Game ${roomId} phase set to 'playing' - all Secret Queens selected`);
+      
+      io.to(roomId).emit('allSecretQueensSelected', { 
+        players: sanitizePlayersForEmit(game.players),
+        gamePhase: 'playing'
+      });
     }
   });
 
@@ -581,6 +589,117 @@ io.on('connection', (socket) => {
       console.log(`Player ${playerId} offered rematch in room ${roomId}, but no opponent found or opponent not connected.`);
       // Optionally, inform the offering player that opponent is not available
       socket.emit('statusUpdate', { message: 'Opponent not available for rematch at the moment.' });
+    }
+  });
+
+  socket.on('offerDraw', (data) => {
+    const { roomId } = data;
+    const playerInfo = getPlayerInfoBySocketId(socket.id);
+    
+    if (!playerInfo || playerInfo.roomId !== roomId) {
+      console.error('offerDraw: Player not found or room mismatch.');
+      socket.emit('errorGame', { message: 'Invalid room or player data for draw offer.' });
+      return;
+    }
+
+    const { game, playerId } = playerInfo;
+    
+    if (game.gamePhase !== 'playing') {
+      console.error('offerDraw: Game is not in playing phase.');
+      socket.emit('errorGame', { message: 'Cannot offer draw when game is not in progress.' });
+      return;
+    }
+
+    console.log(`Player ${playerId} in room ${roomId} offered a draw.`);
+    console.log(`Game has ${game.playerIds.length} players:`, game.playerIds);
+    
+    const opponentId = game.playerIds.find(id => id !== playerId);
+    console.log(`Found opponent ID: ${opponentId}`);
+    
+    if (opponentId && game.players[opponentId]) {
+      console.log(`Opponent ${opponentId} exists. Socket ID: ${game.players[opponentId].socketId}`);
+      console.log(`Opponent connected: ${!game.players[opponentId].disconnected}`);
+      
+      if (game.players[opponentId].socketId) {
+        const opponentSocket = io.sockets.sockets.get(game.players[opponentId].socketId);
+        console.log(`Opponent socket found: ${!!opponentSocket}`);
+        
+        if (opponentSocket) {
+          console.log(`Emitting 'drawOffered' to opponent ${opponentId} in room ${roomId}`);
+          opponentSocket.emit('drawOffered', { roomId });
+          console.log(`Draw offer notification sent successfully`);
+        } else {
+          console.log(`Opponent socket not found for socket ID: ${game.players[opponentId].socketId}`);
+          socket.emit('statusUpdate', { message: 'Opponent not available to receive draw offer at the moment.' });
+        }
+      } else {
+        console.log(`Opponent ${opponentId} has no socket ID`);
+        socket.emit('statusUpdate', { message: 'Opponent not connected to receive draw offer.' });
+      }
+    } else {
+      console.log(`Player ${playerId} offered draw in room ${roomId}, but no opponent found or opponent not connected.`);
+      console.log(`Available players in game:`, Object.keys(game.players || {}));
+      socket.emit('statusUpdate', { message: 'Opponent not available to receive draw offer at the moment.' });
+    }
+  });
+
+  socket.on('acceptDraw', (data) => {
+    const { roomId } = data;
+    const playerInfo = getPlayerInfoBySocketId(socket.id);
+    
+    if (!playerInfo || playerInfo.roomId !== roomId) {
+      console.error('acceptDraw: Player not found or room mismatch.');
+      socket.emit('errorGame', { message: 'Invalid room or player data for draw acceptance.' });
+      return;
+    }
+
+    const { game, playerId } = playerInfo;
+    
+    console.log(`Player ${playerId} in room ${roomId} accepted the draw offer.`);
+    
+    // End the game in a draw
+    game.gamePhase = 'gameOver';
+    game.gameResult = 'draw';
+    game.gameEndReason = 'Draw by agreement';
+    
+    // Notify both players that the draw was accepted
+    io.to(roomId).emit('drawAccepted', { 
+      roomId,
+      result: 'draw',
+      reason: 'Draw by agreement'
+    });
+    
+    io.to(roomId).emit('gameOver', {
+      result: 'draw',
+      reason: 'Draw by agreement',
+      gamePhase: 'gameOver'
+    });
+    
+    console.log(`Game ${roomId} ended in a draw by mutual agreement.`);
+  });
+
+  socket.on('declineDraw', (data) => {
+    const { roomId } = data;
+    const playerInfo = getPlayerInfoBySocketId(socket.id);
+    
+    if (!playerInfo || playerInfo.roomId !== roomId) {
+      console.error('declineDraw: Player not found or room mismatch.');
+      socket.emit('errorGame', { message: 'Invalid room or player data for draw decline.' });
+      return;
+    }
+
+    const { game, playerId } = playerInfo;
+    
+    console.log(`Player ${playerId} in room ${roomId} declined the draw offer.`);
+    
+    const opponentId = game.playerIds.find(id => id !== playerId);
+    
+    if (opponentId && game.players[opponentId] && game.players[opponentId].socketId) {
+      const opponentSocket = io.sockets.sockets.get(game.players[opponentId].socketId);
+      if (opponentSocket) {
+        console.log(`Notifying opponent ${opponentId} in room ${roomId} that draw was declined.`);
+        opponentSocket.emit('drawDeclined', { roomId });
+      }
     }
   });
 
