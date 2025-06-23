@@ -1,0 +1,140 @@
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.loading-container.small {
+  gap: 0.5rem;
+}
+
+.loading-container.large {
+  gap: 1.5rem;
+}
+
+.loading-spinner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner.small {
+  width: 24px;
+  height: 24px;
+}
+
+.loading-spinner.medium {
+  width: 32px;
+  height: 32px;
+}
+
+.loading-spinner.large {
+  width: 48px;
+  height: 48px;
+}
+
+.spinner-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  animation: spin 2s linear infinite;
+}
+
+.loading-spinner.small .spinner-ring {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.loading-spinner.medium .spinner-ring {
+  width: 28px;
+  height: 28px;
+  border-width: 2px;
+}
+
+.loading-spinner.large .spinner-ring {
+  width: 40px;
+  height: 40px;
+  border-width: 3px;
+}
+
+.loading-spinner.primary .spinner-ring:nth-child(1) {
+  border-top-color: #667eea;
+  animation-delay: 0s;
+}
+
+.loading-spinner.primary .spinner-ring:nth-child(2) {
+  border-right-color: #764ba2;
+  animation-delay: -0.4s;
+  animation-duration: 1.5s;
+}
+
+.loading-spinner.primary .spinner-ring:nth-child(3) {
+  border-bottom-color: #667eea;
+  animation-delay: -0.8s;
+  animation-duration: 1.8s;
+}
+
+.loading-spinner.secondary .spinner-ring:nth-child(1) {
+  border-top-color: #f093fb;
+  animation-delay: 0s;
+}
+
+.loading-spinner.secondary .spinner-ring:nth-child(2) {
+  border-right-color: #f5576c;
+  animation-delay: -0.4s;
+  animation-duration: 1.5s;
+}
+
+.loading-spinner.secondary .spinner-ring:nth-child(3) {
+  border-bottom-color: #f093fb;
+  animation-delay: -0.8s;
+  animation-duration: 1.8s;
+}
+
+.loading-spinner.success .spinner-ring:nth-child(1) {
+  border-top-color: #4facfe;
+  animation-delay: 0s;
+}
+
+.loading-spinner.success .spinner-ring:nth-child(2) {
+  border-right-color: #00f2fe;
+  animation-delay: -0.4s;
+  animation-duration: 1.5s;
+}
+
+.loading-spinner.success .spinner-ring:nth-child(3) {
+  border-bottom-color: #4facfe;
+  animation-delay: -0.8s;
+  animation-duration: 1.8s;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  animation: fade-pulse 2s ease-in-out infinite;
+}
+
+.loading-container.small .loading-message {
+  font-size: 0.75rem;
+}
+
+.loading-container.large .loading-message {
+  font-size: 1rem;
+}
+
+@keyframes fade-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+} 

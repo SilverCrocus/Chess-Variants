@@ -4,10 +4,12 @@ import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import io from 'socket.io-client';
 import './GameBoard.css';
+import GameStatusDashboard from './GameStatusDashboard';
+import LoadingSpinner from './LoadingSpinner';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-function GameBoard() {
+function GameBoard({ onGameStateChange, onConnectionChange }) {
   const [isResigning, setIsResigning] = useState(false); // To disable button after click
   const [hasResigned, setHasResigned] = useState(false);
   const { roomId: urlRoomId } = useParams();
@@ -30,8 +32,29 @@ function GameBoard() {
   const [countdownInterval, setCountdownInterval] = useState(null);
   const [drawOfferSent, setDrawOfferSent] = useState(false);
   const [opponentOfferedDraw, setOpponentOfferedDraw] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+
+  // Notify parent components of state changes
+  useEffect(() => {
+    if (onGameStateChange) {
+      onGameStateChange({
+        playerColor,
+        roomId: room,
+        gamePhase
+      });
+    }
+  }, [playerColor, room, gamePhase, onGameStateChange]);
 
   useEffect(() => {
+    if (onConnectionChange) {
+      onConnectionChange(socket?.connected || false);
+    }
+  }, [socket?.connected, onConnectionChange]);
+
+  useEffect(() => {
+    setIsConnecting(true);
+    setConnectionError(null);
     const newSocket = io(SOCKET_SERVER_URL);
     setSocket(newSocket);
 
@@ -63,8 +86,11 @@ function GameBoard() {
 
     newSocket.on('connect', () => {
       console.log('Connected to socket server with ID:', newSocket.id);
-      console.log('Reconnection attempt:', newSocket.io.engine.transport.name);
-      console.log('Reconnection attempt timestamp:', new Date().toISOString());
+      setIsConnecting(false);
+      setConnectionError(null);
+      if (onConnectionChange) {
+        onConnectionChange(true);
+      }
       if (urlRoomId) {
         const playerId = localStorage.getItem('playerId');
         console.log('Attempting to join game on connect event. PlayerId from localStorage:', playerId, 'Room:', urlRoomId);
@@ -72,8 +98,27 @@ function GameBoard() {
       }
     });
 
+    newSocket.on('disconnect', () => {
+      console.log('Disconnected from socket server');
+      setIsConnecting(false);
+      if (onConnectionChange) {
+        onConnectionChange(false);
+      }
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Connection error:', error);
+      setIsConnecting(false);
+      setConnectionError('Failed to connect to server. Please try again.');
+      if (onConnectionChange) {
+        onConnectionChange(false);
+      }
+    });
+
     newSocket.on('gameJoined', (data) => {
       console.log('Game joined:', data);
+      setIsConnecting(false);
+      setConnectionError(null);
       localStorage.setItem('roomId', data.roomId);
       localStorage.setItem('playerId', data.playerId);
       setRoom(data.roomId);
@@ -89,6 +134,8 @@ function GameBoard() {
 
     newSocket.on('gameRejoined', (data) => {
       console.log('Successfully rejoined game:', data);
+      setIsConnecting(false);
+      setConnectionError(null);
       setRoom(data.roomId);
       setPlayerColor(data.color);
       setFen(data.fen);
@@ -125,6 +172,8 @@ function GameBoard() {
 
     newSocket.on('gameStart', (data) => {
       console.log('Game starting:', data);
+      setIsConnecting(false);
+      setConnectionError(null);
       let myPlayerId = localStorage.getItem('playerId');
       let myData = myPlayerId ? data.players[myPlayerId] : null;
 
@@ -424,7 +473,9 @@ function GameBoard() {
   
   const handleJoinRoom = (event) => {
     event.preventDefault();
-    if (room.trim() && socket) {
+    if (room.trim() && socket && !isConnecting) {
+      setIsConnecting(true);
+      setConnectionError(null);
       socket.emit('joinGame', { roomId: room.trim() });
     }
   };
@@ -505,22 +556,17 @@ function GameBoard() {
       </div>
       <div className="game-info">
         <h2>Secret Queen Chess</h2>
-        <p className="status-message">{statusMessage}</p>
-
-        {/* Opponent disconnected notification with countdown */}
-        {opponentDisconnected && disconnectCountdown > 0 && (
-          <div className="disconnect-notification">
-            <p className="disconnect-message">
-              ⚠️ Your opponent has disconnected
-            </p>
-            <p className="countdown-timer">
-              Reconnection window: {Math.floor(disconnectCountdown / 60)}:{(disconnectCountdown % 60).toString().padStart(2, '0')}
-            </p>
-            <p className="countdown-subtext">
-              Game will be terminated if they don't reconnect within {Math.floor(disconnectCountdown / 60)}:{(disconnectCountdown % 60).toString().padStart(2, '0')}
-            </p>
-          </div>
-        )}
+        
+        {/* Enhanced Game Status Dashboard */}
+        <GameStatusDashboard
+          statusMessage={statusMessage}
+          gamePhase={gamePhase}
+          playerColor={playerColor}
+          myPlayerData={myPlayerData}
+          game={game}
+          opponentDisconnected={opponentDisconnected}
+          disconnectCountdown={disconnectCountdown}
+        />
         
         {gamePhase === 'preGame' ? (
           <form onSubmit={handleJoinRoom} className="room-form">
@@ -530,8 +576,24 @@ function GameBoard() {
               onChange={(e) => setRoom(e.target.value)}
               placeholder="Enter Room ID"
               className="room-input"
+              disabled={isConnecting}
             />
-            <button type="submit" className="btn">Join/Create Room</button>
+            <button type="submit" className="btn" disabled={isConnecting || !room.trim()}>
+              {isConnecting ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <LoadingSpinner size="small" variant="secondary" showMessage={false} />
+                  Connecting...
+                </div>
+              ) : (
+                'Join/Create Room'
+              )}
+            </button>
+            {connectionError && (
+              <div className="error-message">
+                <span className="error-icon">⚠️</span>
+                <span>{connectionError}</span>
+              </div>
+            )}
           </form>
         ) : (
           <div className="game-controls">
