@@ -1,0 +1,64 @@
+.page-transition {
+  opacity: 0;
+  transform: translateY(20px) scale(0.98);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+.page-transition.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Reset transforms for chessboard to prevent drag offset */
+.page-transition .chessboard-container,
+.page-transition.visible .chessboard-container {
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+/* Ensure chessboard is not affected by parent transitions */
+.page-transition .chessboard-container > div {
+  transform: none !important;
+}
+
+/* Smoother transitions for different elements */
+.page-transition * {
+  transition: inherit;
+}
+
+/* Special handling for cards and interactive elements */
+.page-transition .game-selection-card,
+.page-transition .game-info,
+.page-transition .chessboard-container {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Staggered animation for multiple cards */
+.page-transition .game-selection-container .game-selection-card:nth-child(1) {
+  transition-delay: 0.1s;
+}
+
+.page-transition .game-selection-container .game-selection-card:nth-child(2) {
+  transition-delay: 0.2s;
+}
+
+.page-transition .game-selection-container .game-selection-card:nth-child(3) {
+  transition-delay: 0.3s;
+}
+
+.page-transition .game-selection-container .game-selection-card:nth-child(4) {
+  transition-delay: 0.4s;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .page-transition {
+    transition: opacity 0.2s ease;
+    transform: none;
+  }
+  
+  .page-transition.visible {
+    transform: none;
+  }
+} 

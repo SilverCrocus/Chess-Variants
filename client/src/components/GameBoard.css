@@ -32,6 +32,8 @@
   position: relative;
 }
 
+/* Let react-chessboard handle its own drag positioning */
+
 .chessboard-container::before {
   content: '';
   position: absolute;
@@ -44,6 +46,7 @@
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-heavy);
   z-index: -1;
+  pointer-events: none; /* Prevent this from interfering with drag */
 }
 
 .game-info {
@@ -198,6 +201,16 @@
   transform: none;
 }
 
+.btn:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.6);
+  outline-offset: 2px;
+}
+
+.room-input:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.6);
+  outline-offset: 2px;
+}
+
 .draw-response-buttons {
   display: flex;
   gap: 0.75rem;
@@ -263,6 +276,31 @@
   font-style: italic;
 }
 
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(220, 53, 69, 0.1);
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  border-radius: 8px;
+  color: #ff6b6b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+}
+
+.error-icon {
+  font-size: 1rem;
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
 @media (max-width: 1024px) {
   .game-container {
     flex-direction: column;
@@ -280,12 +318,18 @@
   .game-container {
     padding: 1rem;
     gap: 1.5rem;
+    min-height: calc(100vh - 140px); /* Account for mobile header */
   }
   
   .game-info {
     padding: 1.5rem;
     width: 100%;
     max-width: none;
+    order: -1; /* Move game info above chessboard on mobile */
+  }
+  
+  .chessboard-container {
+    order: 1;
   }
   
   .chessboard-container::before {
@@ -293,5 +337,19 @@
     left: -10px;
     right: -10px;
     bottom: -10px;
+  }
+  
+  .room-form {
+    gap: 1rem;
+  }
+  
+  .btn {
+    padding: 0.875rem 1.25rem;
+    font-size: 0.9rem;
+  }
+  
+  .draw-response-buttons {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 }
