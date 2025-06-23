@@ -67,23 +67,19 @@ function App() {
           <Route 
             path="/secret-queens" 
             element={
-              <PageTransition>
-                <GameBoard 
-                  onGameStateChange={updateGameState}
-                  onConnectionChange={updateConnectionStatus}
-                />
-              </PageTransition>
+              <GameBoard 
+                onGameStateChange={updateGameState}
+                onConnectionChange={updateConnectionStatus}
+              />
             } 
           />
           <Route 
             path="/room/:roomId" 
             element={
-              <PageTransition>
-                <GameBoard 
-                  onGameStateChange={updateGameState}
-                  onConnectionChange={updateConnectionStatus}
-                />
-              </PageTransition>
+              <GameBoard 
+                onGameStateChange={updateGameState}
+                onConnectionChange={updateConnectionStatus}
+              />
             } 
           />
         </Routes>

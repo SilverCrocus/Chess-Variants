@@ -32,6 +32,8 @@
   position: relative;
 }
 
+/* Let react-chessboard handle its own drag positioning */
+
 .chessboard-container::before {
   content: '';
   position: absolute;
@@ -44,6 +46,7 @@
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-heavy);
   z-index: -1;
+  pointer-events: none; /* Prevent this from interfering with drag */
 }
 
 .game-info {

@@ -10,6 +10,18 @@
   transform: translateY(0) scale(1);
 }
 
+/* Reset transforms for chessboard to prevent drag offset */
+.page-transition .chessboard-container,
+.page-transition.visible .chessboard-container {
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+/* Ensure chessboard is not affected by parent transitions */
+.page-transition .chessboard-container > div {
+  transform: none !important;
+}
+
 /* Smoother transitions for different elements */
 .page-transition * {
   transition: inherit;
