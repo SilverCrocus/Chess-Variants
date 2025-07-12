@@ -27,7 +27,7 @@ const Header = ({ isConnected, playerColor, roomId, gamePhase }) => {
         <div className="header-left">
           <button onClick={handleLogoClick} className="logo-button">
             <div className="logo-container">
-              <img src="/chesslogo.png" alt="Chess Variants" className="logo-image" />
+              <img src="/chessicon.svg" alt="Chess Variants" className="logo-image" />
               <span className="logo-text">Chess Variants</span>
             </div>
           </button>
